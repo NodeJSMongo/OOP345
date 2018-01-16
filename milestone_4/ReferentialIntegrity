@@ -1,0 +1,18 @@
+runningdot -Tpng ReferentialIntegrityOrder.dat.gv >ReferentialIntegrityOrder.dat.gv.png
+1: [Start][1][Install Power Supply]
+2: [Install Power Supply][4][Install Motherboard][Remove Power Supply]
+3: [Remove Power Supply][2][Install Power Supply]
+4: [Install Motherboard][3][Install CPU][Remove Motherboard]
+5: [Remove Motherboard][1][Install Motherboard]
+6: [Install CPU][5][Install Memory][Remove CPU]
+7: [Remove CPU][1][Install CPU]
+8: [Install Memory][4][Install SSD][Remove Memory]
+9: [Remove Memory][1][Install Memory]
+10: [Install SSD][4][Install GPU][Remove SSD]
+11: [Remove SSD][1][Install SSD]
+12: [Install GPU][3][Test][Remove GPU]
+13: [Remove GPU][3][Install GPU]
+14: [Test][4][Approve][Repair]
+running dot -Tpng ReferentialIntegrityTask.dat.gv >ReferentialIntegrityTask.dat.gv.png
+runningdot -Tpng ReferentialIntegrityItem.dat.gv >ReferentialIntegrityItem.dat.gv.png
+Item integrity check

@@ -1,0 +1,1421 @@
+Script started on Thu 13 Apr 2017 04:33:34 PM EDT
+mimahmud@matrix:~/oop345/ms5> whoami
+mimahmud
+mimahmud@matrix:~/oop345/ms5> cat *.cpp *.h
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+#include <algorithm>   // std::find_if
+#include "util.h"
+
+using namespace std;
+
+#include "i.h"
+#include "o.h"
+#include "t.h"
+
+#include "machine.h"
+
+class Factory {
+  vector<Machine> machineList;
+public:
+  // Factory() { }
+  Factory(ItemManager& im, OrderManager& om, TaskManager& tm)
+  {
+    //srand(time(0));  // initialize the random number generator with the time of day clock
+
+    // STEP 1 - load machines into the factory
+    for(size_t count = 0; count < tm.size(); count++) {
+      machineList.push_back( move( Machine( tm.getTask(count) ) ) );
+    }
+
+    int line = 0;
+    // for(auto m : machineList) {
+      // line++;
+      // cout << line << ": " << m.getTaskName() << "\n";
+    // }
+
+    // Step 2 - find source machine
+    auto FindMachine = [&] (string n) -> Machine* {
+      for(size_t i = 0; i < machineList.size(); i++)
+        if(machineList[i].getTaskName() == n)
+          return &machineList[i];
+      return nullptr;
+    };
+    for(auto m : machineList) {
+      string pass = m.getTaskPass();
+      if(!pass.empty()) FindMachine(pass) -> IncInComing();
+
+      string fail = m.getTaskFail();
+      if(!fail.empty()) FindMachine(fail) -> IncInComing();
+    }
+
+    int source = -1;
+    for(size_t m = 0 ; m < machineList.size(); m++ ) {
+      cout << m << ": " << machineList[m].getTaskName();
+      if(machineList[m].isSingleton()) {
+        cout << " SINGLETON";
+      } else {
+        if(machineList[m].isSource()) {
+          cout << " SOURCE";
+          if(source == -1) {
+            source = m;
+          } else {
+            throw string("Multiple sources.  Fix data and re-submit!");
+          }
+        }
+        if(machineList[m].isSink()) cout << " SINK";
+      }
+      cout << "\n";
+    }
+    cout << "Source is " << source << "\n";
+    if(source == -1) throw string("NO SOURCE NODE!!! Fix data and re-submit.");
+
+    // STEP 3 - load jobs into inputQ for the source
+    for( size_t o = 0; o < om.getSize(); o++) {
+      machineList[source].AddJob( Job( om.getOrder(o) ) );
+    }
+
+    for(auto m : machineList) {
+      cout << m.getTaskName() << " has " << m.inputQSize() << " jobs.\n";
+    }
+
+    for(auto &m : machineList) {
+      m.Classify(im);
+    }
+    
+    // STEP 4 time loop
+    int time = 0;
+    while(true) {
+      cout << "TIME = " << time << "\n";
+
+      // ARE THERE MACHINES WITH WORK TO DO?
+      bool AllDone = true;
+      for(auto m : machineList) {
+        if(m.inputQSize()) {           // found a machine with some jobs
+          AllDone = false;
+          break;
+        }
+      }
+      if(AllDone) {
+        cout << "All Done\n";
+        break; // break out of time loop
+      }
+
+      for(auto &m : machineList) { // machine loop
+        if(m.inputQSize() == 0) {
+          continue; // nothing for this machine to do
+        }
+
+        Job job =  m.getJob();
+
+        cout << "'" << m.getTaskName() << "' is looking at job "
+             << job.getCustomer() << "/"
+             << job.getProduct() << "\n";
+
+        if(m.isSink()) {
+          cout << "Job arrived at '" << m.getTaskName() << "' a sink --- nothing to do.\n";
+          cout << "Job exiting system\n";
+          continue; // machine loop over for this machine
+        }
+
+        bool didSomething = false;
+
+        // Are we are an installer?
+        if(m.getInstaller()) {
+          // does this job need our services?
+          cout << "'" << m.getTaskName() << "' is an installer\n";
+
+          // for each item in the order,
+          //  if not installed
+          //    if the installer name is our name
+          //      install the item - call Installer(i,true)
+          for(size_t i =0 ; i < job.size(); i++) {
+            if(job.Installed(i))  // already installed
+              continue; // job item #i is already installed
+
+            string itemName = job.getItem(i);
+            Item* itemPtr = im.FindItem(itemName);
+            if(m.getTaskName() == itemPtr->getItemInstallerTask()) {
+              job.Installed(i,true);  // flag the item as installed
+              didSomething = true;
+              time++;
+              cout << "'" << m.getTaskName() << "' installed '" << itemName << "'\n";
+              break;  // all done installing 1 item
+            }
+          }
+          
+        }
+        // Are we are a remover?
+        if(m.getRemover()) {
+          // does this job need our services?
+          cout << "'" << m.getTaskName() << "' is a remover\n";
+
+          // for each item in the order,
+          //  if not installed
+          //    if the installer name is our name
+          //      remove the item - call Installer(i,false)
+          for(int i = job.size() - 1; i >= 0; i-- ) { // need to remove the last item with our name installed - work backward
+            if(!job.Installed(i))  // not installed
+              continue; // job item #i is not installed
+
+            string itemName = job.getItem(i);
+            Item* itemPtr = im.FindItem(itemName);
+            if(m.getTaskName() == itemPtr->getItemRemoverTask()) {
+              job.Installed(i,false);  // flag the item as removed
+              didSomething = true;
+              time++;
+              cout << "'" << m.getTaskName() << "' removed '" << itemName << "'\n";
+              break;  // all done removing 1 item
+            }
+          }
+        }
+
+        auto MovePass = [&] {                  // original MovePass function (IT WORKS)
+          string pass = m.getTaskPass();
+          cout << "moving job to pass machine '" << pass << "'\n";
+          for(auto &m2 : machineList) {
+            if(m2.getTaskName() == pass) {
+              m2.AddJob(job);
+              break;
+            }
+          }
+        };
+
+        auto MoveFail = [&] {                  // original MoveFail function (IT WORKS)
+          string fail = m.getTaskFail();
+          cout << "moving job to fail machine '" << fail << "'\n";
+          for(auto &m2 : machineList) {
+            if(m2.getTaskName() == fail) {
+              m2.AddJob(job);
+              break;
+            }
+          }
+        };
+
+        if(!didSomething) {
+          // move job to passed inputQ
+          MovePass();
+          continue; // end of this machine
+        }
+
+        if(m.getTaskFail().empty()) {   // if there is only a Pass task
+          // move job to passed inputQ
+          MovePass();
+          continue; // end of this machine
+        }
+
+        // flip a coin (rand() &1 --- test if odd)
+        if(rand() & 1) {
+          // pass
+          // move job to Pass machine inputQ
+          MovePass();
+          continue; // end of this machine
+        } else {
+          // fail
+          // move job to Fail machine inputQ
+          MoveFail();
+          continue; // end of this machine
+        }
+
+      } // machine loop
+
+    } // time loop
+
+    cout << "Simulation over\n";
+    cout << "TIME = " << time << "\n";
+  }
+
+};
+
+int main(int argc, char*argv[])
+{
+  try {
+    if(argc != 5) {
+      throw string("Usage ") + argv[0] + string(": item order task (the 3 csv files) delimiter-char");
+    }
+
+    string filenameItem   = string(argv[1]);     // 1st arg is Item CSV file name.
+    string filenameOrder  = string(argv[2]);     // 2nd arg is Order CSV file name.
+    string filenameTask   = string(argv[3]);     // 3rd arg is Task CSV file name.
+    char   delimiter      = argv[4][0];          // 4th arg, 1st char is delimiter
+
+    vector < vector< string > > csvItemData;
+    vector < vector< string > > csvOrderData;
+    vector < vector< string > > csvTaskData;
+
+    csvRead(filenameItem,  delimiter, csvItemData);
+    csvRead(filenameOrder, delimiter, csvOrderData);
+    csvRead(filenameTask,  delimiter, csvTaskData);
+
+    // csvPrint(csvTaskData);
+
+    ItemManager im(csvItemData);
+    im.Print();
+    im.Graph(filenameItem);
+
+    OrderManager om(csvOrderData);
+    om.Print();
+    om.Graph(filenameOrder);
+
+    TaskManager tm(csvTaskData);
+    tm.Print();
+    tm.Graph(filenameTask);
+
+    bool GoodToGo = true;
+    cout << "Item integrity check\n";
+    try {
+      im.IntegrityCheck(tm);
+    } catch(string& e) {
+      GoodToGo = false;
+      cerr << e << "\n";
+    }
+
+    cout << "Order integrity check\n";
+    try {
+      om.IntegrityCheck(im);
+    } catch(string& e) {
+      GoodToGo = false;
+      cerr << e << "\n";
+    }
+
+
+    cout << "Task integrity check\n";
+    try {
+      tm.IntegrityCheck();
+    } catch(string& e) {
+      GoodToGo = false;
+      cerr << e << "\n";
+    }
+
+    if(GoodToGo == false) {
+      cerr << "***************************************\n";
+      cerr << "* DATA HAS ERRORS.  FIX AND RESUBMIT! *\n";
+      cerr << "***************************************\n";
+      exit(1);
+    }
+
+    cout << "******************************************************\n";
+    cout << "* DATA PASSED THE INTEGRITY CHECK AND IS GOOD TO GO! *\n";
+    cout << "******************************************************\n";
+
+    Factory factory(im, om, tm);
+
+  } catch (const string& e) {
+    cerr << e << "\n";
+    return 0;
+  }
+  return 99;
+}
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+#include <cstring>   // strcasecmp
+#include "util.h"
+#include "i.h"
+
+using namespace std;
+
+
+
+  Item::Item( vector<string> row)
+  {
+    switch( row.size() ) {
+    case 5:
+      itemDescription = row[4];
+    case 4:
+      if(validItemSequence( row[3] ))
+        itemSequence = row[3];
+      else
+        throw string("expected sequence, found [") + row[3] + "]";
+    // case 3:
+      if(validTaskName( row[2] ))
+        itemRemoverTask = row[2];
+      else
+        throw string("expected fail item name, found [") + row[2] + "]";
+    // case 2:
+      if(validTaskName( row[1] ))
+        itemInstallerTask = row[1];
+      else
+        throw string("expected fail item name, found [") + row[1] + "]";
+    // case 1:
+      if(validItemName( row[0] ))
+        itemName = row[0];
+      else
+        throw string("expected fail item name, found [") + row[0] + "]";
+      break;
+    default:
+      throw string("expected 4 or 5 fields, found - ") + to_string(row.size());
+    }
+  }
+  void Item::Print()
+  {
+    cout << "[" << itemName << "] "
+         << "[" << itemInstallerTask << "] "
+         << "[" << itemRemoverTask << "] "
+         << "[" << itemSequence << "] "
+         << "[" << itemDescription << "]\n";
+  }
+  void Item::Graph( fstream& os )
+  {
+      os << '"' << "Item\n" << itemName << '"' 
+         << "->" 
+         << '"' << "Installer\n" << itemInstallerTask << '"' 
+         << "[color=green];\n";
+
+      os << '"' << "Item\n" << itemName << '"' \
+         << "->" << '"' << "Remover\n" << itemRemoverTask << '"' \
+         << "[color=red];\n";
+  }
+
+  ItemManager::ItemManager( vector < vector< string > > & csvData)
+  {
+    int lineNumber = 0;
+    for(auto row : csvData) {
+      try {
+        lineNumber++;
+        itemList.push_back( move(Item(row)) );
+      } catch(string& e) {
+        cerr << "Problem with line " << lineNumber << ": " << e << "\n";
+      }
+    }
+  }
+  void ItemManager::Print()
+  {
+    int lineNumber = 0;
+    for(auto t : itemList) {
+        lineNumber++;
+        cout << lineNumber << ": ";
+        t.Print();
+    }
+  }
+  void ItemManager::Graph(string& filename)
+  {
+    fstream os(filename + ".gv", ios::out);
+    if(os.is_open()) {
+
+      os << "digraph itemgraph {\n";
+      for(auto t : itemList) {
+        t.Graph(os);
+      }
+      os << "}\n";
+      os.close();
+
+      //std::string cmd;
+      #ifdef __unix
+            std::string dot = "dot";
+      #else  // Microsoft
+            // assumes GraphViz 2.38 is installed in the default location
+            std::string dot = "C:/\"Program Files (x86)\"/Graphviz2.38/bin/dot.exe";
+      #endif
+            std::string cmd = dot + " -Tpng " + filename + ".gv > " + filename + ".gv.png";
+            std::cout << cmd << " returned " << system(cmd.c_str()) << "\n";
+    }
+  }
+  
+  void ItemManager::IntegrityCheck(TaskManager& tm)
+  {
+
+    for(auto i : itemList) {
+      if(tm.FindTask(i.getItemInstallerTask()) == nullptr) {
+        throw std::string("Item '") + i.getItemName() + "' references installer task '" + i.getItemInstallerTask() + "' but it does not exist!";
+      }
+      if(tm.FindTask(i.getItemRemoverTask()) == nullptr) {
+        throw std::string("Item '") + i.getItemName() + "' references remover task '" + i.getItemRemoverTask() + "' but it does not exist!";
+      }
+    }
+  }
+
+ Item* ItemManager::FindItem(std::string& name)
+ {
+   for(size_t i = 0 ; itemList.size(); i++) {
+     if(itemList[i].getItemName() == name)                                         // if  case matters
+      // if(strcasecmp(itemList[i].getItemName() .c_str(),  name.c_str()) == 0)    // if ignoring case
+       return &itemList[i];
+   }
+   return nullptr;
+ }
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+#include "o.h"
+
+Order::Order(vector<string> row)
+{
+  if (row.size() < 3) {
+    throw string("need at least 3 fields, found") + to_string(row.size());
+  }
+
+  if (validOrderCustomerName(row[0]))
+    orderCustomerName = row[0];
+  else
+    throw string("expected customer name, found [") + row[0] + "]";
+
+  if (validOrderProductName(row[1]))
+    orderProductName = row[1];
+  else
+    throw string("expected product name, found [") + row[1] + "]";
+
+  for (size_t i = 2; i < row.size(); i++)
+  if (validItemName(row[i]))
+    itemList.push_back(row[i]);
+  else
+    throw string("expected item name, found [") + row[i] + "]";
+}
+
+void Order::Print()
+{
+  cout << "[" << orderCustomerName << "]"
+    << "[" << orderProductName << "]";
+  for (auto e : itemList)
+    cout << "[" << e << "]";
+  cout << "\n";
+}
+
+void Order::Graph(fstream& os)
+{
+  for (auto e : itemList)
+    os << '"' << orderCustomerName << "\n" << orderProductName << '"'
+    << "->"
+    << '"' << e << '"'
+    << "[color=blue];\n";
+}
+
+OrderManager::OrderManager(vector <vector< string> >& csvData)
+{
+  int lineNumber = 0;
+  for (auto row : csvData) {
+    try {
+      lineNumber++;
+      orderList.push_back(move(Order(row)));
+    }
+    catch (string& e) {
+      cerr << "Problem with line " << lineNumber << ": " << e << "\n";
+    }
+  }
+}
+
+void OrderManager::Print() {
+  int lineNumber = 0;
+  for (auto t : orderList) {
+    lineNumber++;
+    cout << lineNumber << ": ";
+    t.Print();
+  }
+}
+
+void OrderManager::Graph(string& filename)
+{
+  fstream os(filename + ".gv", ios::out);
+  if (os.is_open()) {
+
+    os << "digraph ordergraph {\n";
+    for (auto t : orderList) {
+      t.Graph(os);
+    }
+
+    os << "}\n";
+    os.close();
+    //std::string cmd;
+    #ifdef __unix
+        std::string dot = "dot";
+    #else  // Microsoft
+        // assumes GraphViz 2.38 is installed in the default location
+        std::string dot = "C:/\"Program Files (x86)\"/Graphviz2.38/bin/dot.exe";
+    #endif
+        std::string cmd = dot + " -Tpng " + filename + ".gv > " + filename + ".gv.png";
+        std::cout << cmd << " returned " << system(cmd.c_str()) << "\n";
+  }
+}
+
+void OrderManager::IntegrityCheck(ItemManager& im) {
+  for (auto o : orderList) {// for each order
+    for (size_t count = 0; count < o.size(); count++) { // for each item in that order
+      if (im.FindItem(o.getItem(count)) == nullptr) { // throw if not found
+        throw std::string("Order  ") + o.getCustomer() + "references remover task" + o.getItem(count) + "but it does not excist!";
+      }
+    }
+  }
+}
+
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+#include <cstring>   // strcasecmp
+#include "util.h"
+#include "t.h"
+
+using namespace std;
+
+
+Task::Task(std::vector<std::string> row) : taskSlots("1")
+{
+  switch (row.size()) {
+  case 4:
+    if (validTaskName(row[3]))
+      taskFail = row[3];
+    else
+      throw std::string("expected fail task name, found [") + row[3] + "]";
+  case 3:
+    if (validTaskName(row[2]))
+      taskPass = row[2];
+    else
+      throw std::string("expected fail task name, found [") + row[2] + "]";
+  case 2:
+    if (validSlotName(row[1]))
+      taskSlots = row[1];
+    else
+      throw std::string("expected fail task name, found [") + row[2] + "]";
+  case 1:
+    if (validTaskName(row[0]))
+      taskName = row[0];
+    else
+      throw std::string("expected fail task name, found [") + row[0] + "]";
+    break;
+  default:
+    throw std::string("expected 1,2,3 or 4 fields, found - ") + to_string(row.size());
+  }
+}
+
+void Task::Print() {
+  cout << "[" << taskName << "] "
+    << "[" << taskSlots << "] "
+    << "[" << taskPass << "] "
+    << "[" << taskFail << "]\n";
+}
+
+void Task::Graph(fstream& os)
+{
+  if (!taskFail.empty())
+    os << '"' << taskName << '"'
+    << "->"
+    << '"' << taskFail << '"'
+    << "[color=red];\n";
+  if (!taskPass.empty())
+    os << '"' << taskName << '"'
+    << "->" << '"' << taskPass << '"'
+    << "[color=green];\n";
+  if (taskFail.empty() && taskPass.empty())
+    os << '"' << taskName << '"'
+    << ";\n";
+}
+
+TaskManager::TaskManager(std::vector < std::vector< std::string> > & csvData)
+{
+  int lineNumber = 0;
+  for (auto row : csvData) {
+    try {
+      lineNumber++;
+      taskList.push_back(move(Task(row)));
+    }
+    catch (std::string& e) {
+      cerr << "Problem with line " << lineNumber << ": " << e << "\n";
+    }
+  }
+}
+
+void TaskManager::Print()
+{
+  int lineNumber = 0;
+  for (auto t : taskList) {
+    lineNumber++;
+    cout << lineNumber << ": ";
+    t.Print();
+  }
+}
+
+void TaskManager::Graph(std::string& filename)
+{
+  fstream os(filename + ".gv", ios::out);
+  if (os.is_open()) {
+
+    os << "digraph taskgraph {\n";
+    for (auto t : taskList) {
+      t.Graph(os);
+    }
+    os << "}\n";
+    os.close();
+
+    //std::string cmd;
+    #ifdef __unix
+        std::string dot = "dot";
+    #else  // Microsoft
+        // assumes GraphViz 2.38 is installed in the default location
+        std::string dot = "C:/\"Program Files (x86)\"/Graphviz2.38/bin/dot.exe";
+    #endif
+        std::string cmd = dot + " -Tpng " + filename + ".gv > " + filename + ".gv.png";
+        std::cout << cmd << " returned " << system(cmd.c_str()) << "\n";
+  }
+}
+
+Task* TaskManager::FindTask(std::string& name)
+{
+  for (size_t t = 0; t < taskList.size(); t++) {
+    if (taskList[t].getTaskName() == name)
+      return &taskList[t];
+  }
+  return nullptr;
+}
+
+void TaskManager::IntegrityCheck()
+{
+  for (auto t : taskList) {
+    if (!t.getTaskPass().empty() && FindTask(t.getTaskPass()) == nullptr) {
+      throw std::string("Task '") + t.getTaskName() + "' references Pass task '" + t.getTaskPass() + "' but it does not exist!";
+    }
+    if (!t.getTaskFail().empty() && FindTask(t.getTaskFail()) == nullptr) {
+      throw std::string("Task '") + t.getTaskName() + "' references Fail task '" + t.getTaskFail() + "' but it does not exist!";
+    }
+
+  }
+}
+
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+// put '|' for pipe symbol
+
+using namespace std;
+
+bool validTaskName(string& t)
+{
+  if (t.empty()) {
+    return false;
+  }
+
+  for (auto c : t) {
+    if (!(isalnum(c) || c == ' ' || c == '_')) { // if letter not (alphanumeric), space or underscore
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool validSlotName(string& t)
+{
+  if (t.empty()) {
+    return false;
+  }
+
+  for (auto c : t) {
+    if (!(isalnum(c))) { // if not number
+      return false;
+    }
+  }
+  return true;
+}
+
+//not sure about these///////////////////////////////////////////////////////////
+bool validItemName(string& t) {
+  if (t.empty()) {
+    return false;
+  }
+
+  for (auto c : t) {
+    if (!(isalnum(c) || c == ' ' || c == '_')) { // if letter not (alphanumeric), space or underscore
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool validOrderCustomerName(string& t) {
+  if (t.empty()) {
+    return false;
+  }
+
+  for (auto c : t) {
+    if (!(isalnum(c) || c == ' ' || c == '_')) { // if letter not (alphanumeric), space or underscore
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool validOrderProductName(string& t) {
+
+  if (t.empty()) {
+    return false;
+  }
+
+  for (auto c : t) {
+    if (!(isalnum(c) || c == ' ' || c == '_')) { // if letter not (alphanumeric), space or underscore
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool validItemSequence(string& t) {
+
+  if (t.empty()) return false;
+
+  for (auto c : t) {
+    if (!isdigit(c))
+      return false;
+  }
+
+  return true;
+}
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+
+void Trim(string& f) {
+  while (!f.empty() && f[0] == ' ') { //delete leading space
+    f.erase(0, 1);
+  }
+
+  while (!f.empty() && f[f.size() - 1] == ' ') // delete trailing spaces
+    f.erase((f.size() - 1), 1);
+}
+
+void csvPrint(vector < vector<string> > & csvData) {
+  cout << "number of lines = " << csvData.size() << "\n";
+
+  // print using indexes
+  for (size_t row = 0; row < csvData.size(); row++) {
+    cout << "row =" << row << " ";
+    for (size_t column = 0; column < csvData[row].size(); column++) {
+      cout << "'" << csvData[row][column] << "' ";
+      //cout << "\n";
+    }
+    cout << "\n";
+  }
+
+  // print using iterators
+  for (auto rowIt = csvData.begin(); rowIt != csvData.end(); rowIt++) {
+    for (auto columnIt = rowIt->begin(); columnIt != rowIt->end(); columnIt++) {
+      cout << "'" << *columnIt << "\n";
+    }
+    cout << "\n";
+  }
+
+  // print using range-based for    //ON THE EXAM
+  for (auto row : csvData) {
+    for (auto column : row) {
+      cout << "'" << column << "'";
+      //cout << "\n";
+    }
+    cout << "\n";
+  }
+}
+
+void csvRead(string& filename, char delim, vector<vector<string> >& csvData) {
+  fstream is(filename, ios::in);
+
+  if (!is.is_open())
+    throw string("cannot open file") + filename;
+
+  string line;
+  while (getline(is, line)) {
+    auto cr = line.find('\r');
+    if (cr != string::npos)
+      line.erase(cr);
+
+    //	cout << "line ==>" << line << "<==\n";
+    vector <string> fields;
+    string field;
+    size_t i = 0;
+
+    while (i < line.size()) {
+      if (line[i] != delim) {
+        field += line[i];
+      }
+      else { // found delimeter
+        Trim(field);
+        fields.push_back(move(field)); // add field to our lost of fields
+        //field.clear();
+      }
+      i++;
+    } // end of processing line
+    if (!field.empty()) {
+      Trim(field);
+      fields.push_back(move(field));
+      //add line fields to csvData
+      csvData.push_back(move(fields));
+      fields.clear();
+    }
+  }
+
+  is.close();
+}#pragma once
+
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+#include "t.h"
+
+class Item {
+  string itemName, itemInstallerTask, itemRemoverTask, itemSequence, itemDescription;
+public:
+  Item( vector<string> row);
+  void Print();
+  void Graph( fstream& os );
+  std::string& getItemName          () { return itemName; }
+  std::string& getItemInstallerTask () { return itemInstallerTask; }
+  std::string& getItemRemoverTask   () { return itemRemoverTask; }
+
+};
+
+class ItemManager {
+  vector< Item > itemList;
+public:
+  ItemManager( vector < vector< string > > & csvData);
+  void Print();
+  void Graph(string& filename);
+  Item* FindItem(std::string& name);
+  void IntegrityCheck(TaskManager& tm);
+
+  size_t getSize()         { return itemList.size(); }
+  Item*  getItem(size_t i) { return &itemList[i]; }
+};
+#pragma once
+
+#include "o.h"
+
+class Job : public Order {
+	vector <bool> installed;
+public:
+	Job() {}
+	Job(Order *o) : Order(*o) {
+		installed.resize(size());
+
+		for (size_t i = 0; i < size(); i++)
+			installed[i] = false;
+	}
+
+	bool Installed(size_t i) { return installed[i]; }
+	void Installed(size_t i, bool value) { installed[i] = value; }
+};
+#pragma once
+
+#include <queue>
+
+#include "t.h"
+#include "job.h"
+
+class Machine : public Task {
+  int inComing;
+  std::queue< Job > inputQ;
+
+  bool bInstaller;
+  bool bRemover;
+
+public:
+  Machine()
+    : inComing(0)
+  {
+  }
+  Machine (Task* t) 
+    : Task(*t) 
+    , inComing(0)
+  {
+  }
+  void IncInComing()
+  {
+    inComing++;
+  }
+  bool isSource()    const { return inComing == 0; }
+  bool isSink()            { return getTaskPass().empty();  }  // compiler error if const
+  bool isSingleton()       { return isSource() && isSink(); }  // compiler error if const
+
+  void AddJob( Job job ) { inputQ.push( move ( job ) ); }
+
+  size_t inputQSize() const { return inputQ.size(); }
+
+  Job getJob() {
+    //  cout << "getJob: " << inputQSize() << "\n";
+    Job job = move( inputQ.front() );
+    inputQ.pop();
+    //  cout << "getJob after pop: " << inputQSize() << "\n";
+    return job;
+  }
+
+  void Classify(ItemManager& im) {
+    bInstaller = false;
+    bRemover   = false;
+
+    for(size_t i = 0; i < im.getSize(); i++ ) {
+      if(getTaskName() == im.getItem(i) -> getItemInstallerTask() )
+        bInstaller = true;
+      if(getTaskName() == im.getItem(i) -> getItemRemoverTask() )
+        bRemover = true;
+    }
+
+    if(bInstaller) cout << getTaskName() << " is an installer\n";
+    if(bRemover)   cout << getTaskName() << " is a remover\n";
+    if(bInstaller && bRemover)
+      throw getTaskName() + " is BOTH an and a remover";
+    
+  }
+  bool getInstaller() const { return bInstaller; }
+  bool getRemover  () const { return bRemover; }
+};
+#pragma once
+
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+#include "i.h"
+
+class Order {
+  string orderCustomerName, orderProductName;
+  vector<string> itemList;
+public:
+  Order( ) {}
+  Order( vector<string> row);
+  void Print();
+  void Graph( fstream& os );
+  string& getCustomer()       { return orderCustomerName; }
+  string& getProduct()        { return orderProductName; }
+  size_t size()               { return itemList.size(); }
+  string& getItem(size_t i)   { return itemList[i]; }
+};
+
+class OrderManager {
+  vector< Order > orderList;
+public:
+  OrderManager( vector < vector< string > > & csvData);
+  void Print();
+  void Graph(string& filename);
+  void IntegrityCheck(ItemManager& im);
+  
+  size_t getSize() { return orderList.size(); }
+  Order* getOrder(size_t o) { return &orderList[o]; }
+};
+#pragma once
+
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+#include "util.h"
+
+// using namespace std;
+
+class Task {
+  std::string taskName, taskSlots, taskPass, taskFail;
+public:
+  Task( ) {}
+  Task( std::vector<std::string> row);
+  void Print();
+  void Graph( std::fstream& os );
+  std::string& getTaskName() { return taskName; }
+  std::string& getTaskPass() { return taskPass; }
+  std::string& getTaskFail() { return taskFail; }
+};
+
+class TaskManager {
+  std::vector< Task > taskList;
+public:
+  TaskManager( std::vector < std::vector< std::string > > & csvData);
+  void Print();
+  void Graph(std::string& filename);
+  Task* FindTask(std::string& name);
+  void IntegrityCheck();
+  size_t size() { return taskList.size(); }
+  Task* getTask(size_t t) { return &taskList[t]; }
+};
+#pragma once
+
+#include <iostream>
+#include <fstream>
+#include <vector> 
+#include <string>
+
+using namespace std;
+
+void trim(string& s);
+
+void csvPrint(vector < vector< string > > & csvData);
+
+void csvRead(string& filename, char delimiter, vector < vector< string > > & csvData);
+
+bool validItemName(string&t);
+
+bool validItemSequence(string&t);
+
+bool validOrderCustomerName(string&t);
+
+bool validOrderProductName(string&t);
+
+bool validTaskName(string&t);
+
+bool validSlotName(string&t);
+mimahmud@matrix:~/oop345/ms5> 
+mimahmud@matrix:~/oop345/ms5> 
+mimahmud@matrix:~/oop345/ms5> 
+mimahmud@matrix:~/oop345/ms5> cat *.cpp *.hwhoami[Km5 ReferentialIntegrityOrder.dat ReferentialIntegriityTask.dat ReferentialIntegrityItem.dat "|"[Aclear[K
+[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm5 ReferentialIntegrityOrder.dat ReferentialIntegriityTask.dat ReferentialIntegrityItem.dat  > ReferentialIntegrity "|"[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cg++ -o m5 -std=c++0x t.cpp i.cpp o.cpp util.cpp fac[Cory.cpp[K
+mimahmud@matrix:~/oop345/ms5> g++ -o m5 -std=c++0x t.cpp i.cpp o.cpp util.cpp facctory.cpp[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Ccat *.cpp *.h[K
+[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cwhoami[Km5 ReferentialIntegrityOrder.dat ReferentialIntegriityTask.dat ReferentialIntegrityItem.dat "|"[Aclear[K
+[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm5 ReferentialIntegrityOrder.dat ReferentialIntegriityTask.dat ReferentialIntegrityItem.dat  > ReferentialIntegrity "|"[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cg++ -o m5 -std=c++0x t.cpp i.cpp o.cpp util.cpp fac[Cory.cpp[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cls[K
+[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cclearg++ -o m5 -std=c++0x t.cpp i.cpp o.cpp util.cpp facctory.cpp[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cls[K
+[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cg++ -o m5 -std=c++0x t.cpp i.cpp o.cpp util.cpp facctory.cpp[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cclear[K
+[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cls[Kg++ -o m5 -std=c++0x t.cpp i.cpp o.cpp util.cpp facctory.cpp[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm5 ReferentialIntegrityOrder.dat ReferentialIntegri[CyTask.dat ReferentialIntegrityItem.dat  > ReferentialIntegrity "|"[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[C[C.dat [K.dat [K.dat [K.dat [KT.dat a.dat s.dat k.dat .dat ReferentialIntegrityTask.dat [K[C[C[C[C[C[C.dat ReferentialIntegrityTask.dat [K[C[C[C[C[C.dat ReferentialIntegrityTask.dat [K[C[C[C[C.dat ReferentialIntegrityTask.dat [K[C[C[CO.dat ReferentialIntegrityTask.dat [C[C[C[Cr.dat ReferentialIntegrityTask.dat [C[C[C[C[Cd.dat ReferentialIntegrityTask.dat [C[C[C[C[C[Ce.dat ReferentialIntegrityTask.dat [C[C[C[C[C[C[Cr.dat ReferentialIntegrityTask.dat [C[C[C[C[C[C[C[C[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[CI.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Ct.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Ce.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm.dat ReferentialIntegrityOrder.dat ReferentialIntegrityTask.dat [A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C
+[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C " | " 
+1: [I5] [Install CPU] [Remove CPU] [300] [Intel I5 Central Processing Unit]
+2: [I7] [Install CPU] [Remove CPU] [400] [Intel I7 Central Processing Unit]
+3: [A12] [Install CPU] [Remove CPU] [500] [AMD A12 Central Processing Unit]
+4: [DDR 266] [Install Memory] [Remove Memory] [125] [Samsung DDR 266 Memory Stick]
+5: [DDR 400] [Install Memory] [Remove Memory] [940] [Samsung DDR 400 Memory Stick]
+6: [Geforce 750M] [Install GPU] [Remove GPU] [395] [Nvidia Geforce 750M GPU]
+7: [Nano] [Install GPU] [Remove GPU] [30] [AMD Nano GPU]
+8: [Power Supply 200 Watt] [Install Power Supply] [Remove Power Supply] [1100] []
+9: [Power Supply 300 Watt] [Install Power Supply] [Remove Power Supply] [9100] []
+Warning: ReferentialIntegrityItem.dat.gv:2: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:4: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:5: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:7: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:8: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:10: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:11: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:13: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:14: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:16: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:17: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:19: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:20: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:22: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:23: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:25: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:26: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:28: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:29: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:31: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:32: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:33: ambiguous "750M" splits into two names: "750" and "M"
+Warning: ReferentialIntegrityItem.dat.gv:34: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:35: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:36: ambiguous "750M" splits into two names: "750" and "M"
+Warning: ReferentialIntegrityItem.dat.gv:37: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:38: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:40: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:41: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:43: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:44: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:46: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:47: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:49: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:50: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:52: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:53: string ran past end of line
+Warning: ReferentialIntegrityItem.dat.gv:55: string ran past end of line
+dot -Tpng ReferentialIntegrityItem.dat.gv > ReferentialIntegrityItem.dat.gv.png returned 0
+1: [Biance][Dell 123][DDR 400][I7][DDR 266][Nano][Power Supply 300 Watt]
+2: [Salt_N_Pepa][HP 345][A12][DDR 266][Geforce 750M][DDR 400][Power Supply 300 Watt]
+3: [Brianna][Acer 567][I5][Power Supply 200 Watt][DDR 266][Nano]
+Warning: ReferentialIntegrityOrder.dat.gv:2: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:3: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:4: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:5: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:6: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:7: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:8: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:9: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:10: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:11: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:12: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:13: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:14: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:15: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:16: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:17: ambiguous "750M" splits into two names: "750" and "M"
+Warning: ReferentialIntegrityOrder.dat.gv:17: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:18: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:19: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:20: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:21: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:22: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:23: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:24: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:25: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:26: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:27: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:28: string ran past end of line
+Warning: ReferentialIntegrityOrder.dat.gv:29: string ran past end of line
+dot -Tpng ReferentialIntegrityOrder.dat.gv > ReferentialIntegrityOrder.dat.gv.png returned 0
+1: [Start] [1] [Install Power Supply] []
+2: [Install Power Supply] [4] [Install Motherboard] [Remove Power Supply]
+3: [Remove Power Supply] [2] [Install Power Supply] []
+4: [Install Motherboard] [3] [Install CPU] [Remove Motherboard]
+5: [Remove Motherboard] [1] [Install Motherboard] []
+6: [Install CPU] [5] [Install Memory] [Remove CPU]
+7: [Remove CPU] [1] [Install CPU] []
+8: [Install Memory] [4] [Install SSD] [Remove Memory]
+9: [Remove Memory] [1] [Install Memory] []
+10: [Install SSD] [4] [Install GPU] [Remove SSD]
+11: [Remove SSD] [1] [Install SSD] []
+12: [Install GPU] [3] [Test] [Remove GPU]
+13: [Remove GPU] [3] [Install GPU] []
+14: [Test] [4] [Approve] [Repair]
+15: [Approve] [1] [] []
+16: [Repair] [1] [] []
+dot -Tpng ReferentialIntegrityTask.dat.gv > ReferentialIntegrityTask.dat.gv.png returned 0
+Item integrity check
+Order integrity check
+Task integrity check
+******************************************************
+* DATA PASSED THE INTEGRITY CHECK AND IS GOOD TO GO! *
+******************************************************
+0: Start SOURCE
+1: Install Power Supply
+2: Remove Power Supply
+3: Install Motherboard
+4: Remove Motherboard
+5: Install CPU
+6: Remove CPU
+7: Install Memory
+8: Remove Memory
+9: Install SSD
+10: Remove SSD
+11: Install GPU
+12: Remove GPU
+13: Test
+14: Approve SINK
+15: Repair SINK
+Source is 0
+Start has 3 jobs.
+Install Power Supply has 0 jobs.
+Remove Power Supply has 0 jobs.
+Install Motherboard has 0 jobs.
+Remove Motherboard has 0 jobs.
+Install CPU has 0 jobs.
+Remove CPU has 0 jobs.
+Install Memory has 0 jobs.
+Remove Memory has 0 jobs.
+Install SSD has 0 jobs.
+Remove SSD has 0 jobs.
+Install GPU has 0 jobs.
+Remove GPU has 0 jobs.
+Test has 0 jobs.
+Approve has 0 jobs.
+Repair has 0 jobs.
+Install Power Supply is an installer
+Remove Power Supply is a remover
+Install CPU is an installer
+Remove CPU is a remover
+Install Memory is an installer
+Remove Memory is a remover
+Install GPU is an installer
+Remove GPU is a remover
+TIME = 0
+'Start' is looking at job Biance/Dell 123
+moving job to pass machine 'Install Power Supply'
+'Install Power Supply' is looking at job Biance/Dell 123
+'Install Power Supply' is an installer
+'Install Power Supply' installed 'Power Supply 300 Watt'
+moving job to pass machine 'Install Motherboard'
+'Install Motherboard' is looking at job Biance/Dell 123
+moving job to pass machine 'Install CPU'
+'Install CPU' is looking at job Biance/Dell 123
+'Install CPU' is an installer
+'Install CPU' installed 'I7'
+moving job to fail machine 'Remove CPU'
+'Remove CPU' is looking at job Biance/Dell 123
+'Remove CPU' is a remover
+'Remove CPU' removed 'I7'
+moving job to pass machine 'Install CPU'
+TIME = 3
+'Start' is looking at job Salt_N_Pepa/HP 345
+moving job to pass machine 'Install Power Supply'
+'Install Power Supply' is looking at job Salt_N_Pepa/HP 345
+'Install Power Supply' is an installer
+'Install Power Supply' installed 'Power Supply 300 Watt'
+moving job to pass machine 'Install Motherboard'
+'Install Motherboard' is looking at job Salt_N_Pepa/HP 345
+moving job to pass machine 'Install CPU'
+'Install CPU' is looking at job Biance/Dell 123
+'Install CPU' is an installer
+'Install CPU' installed 'I7'
+moving job to pass machine 'Install Memory'
+'Install Memory' is looking at job Biance/Dell 123
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 400'
+moving job to pass machine 'Install SSD'
+'Install SSD' is looking at job Biance/Dell 123
+moving job to pass machine 'Install GPU'
+'Install GPU' is looking at job Biance/Dell 123
+'Install GPU' is an installer
+'Install GPU' installed 'Nano'
+moving job to pass machine 'Test'
+'Test' is looking at job Biance/Dell 123
+moving job to pass machine 'Approve'
+'Approve' is looking at job Biance/Dell 123
+Job arrived at 'Approve' a sink --- nothing to do.
+Job exiting system
+TIME = 7
+'Start' is looking at job Brianna/Acer 567
+moving job to pass machine 'Install Power Supply'
+'Install Power Supply' is looking at job Brianna/Acer 567
+'Install Power Supply' is an installer
+'Install Power Supply' installed 'Power Supply 200 Watt'
+moving job to fail machine 'Remove Power Supply'
+'Remove Power Supply' is looking at job Brianna/Acer 567
+'Remove Power Supply' is a remover
+'Remove Power Supply' removed 'Power Supply 200 Watt'
+moving job to pass machine 'Install Power Supply'
+'Install CPU' is looking at job Salt_N_Pepa/HP 345
+'Install CPU' is an installer
+'Install CPU' installed 'A12'
+moving job to fail machine 'Remove CPU'
+'Remove CPU' is looking at job Salt_N_Pepa/HP 345
+'Remove CPU' is a remover
+'Remove CPU' removed 'A12'
+moving job to pass machine 'Install CPU'
+TIME = 11
+'Install Power Supply' is looking at job Brianna/Acer 567
+'Install Power Supply' is an installer
+'Install Power Supply' installed 'Power Supply 200 Watt'
+moving job to pass machine 'Install Motherboard'
+'Install Motherboard' is looking at job Brianna/Acer 567
+moving job to pass machine 'Install CPU'
+'Install CPU' is looking at job Salt_N_Pepa/HP 345
+'Install CPU' is an installer
+'Install CPU' installed 'A12'
+moving job to pass machine 'Install Memory'
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 15
+'Install CPU' is looking at job Brianna/Acer 567
+'Install CPU' is an installer
+'Install CPU' installed 'I5'
+moving job to pass machine 'Install Memory'
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 18
+'Install Memory' is looking at job Brianna/Acer 567
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to pass machine 'Install SSD'
+'Install SSD' is looking at job Brianna/Acer 567
+moving job to pass machine 'Install GPU'
+'Install GPU' is looking at job Brianna/Acer 567
+'Install GPU' is an installer
+'Install GPU' installed 'Nano'
+moving job to pass machine 'Test'
+'Test' is looking at job Brianna/Acer 567
+moving job to pass machine 'Approve'
+'Approve' is looking at job Brianna/Acer 567
+Job arrived at 'Approve' a sink --- nothing to do.
+Job exiting system
+TIME = 20
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 22
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 24
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 26
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 28
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to fail machine 'Remove Memory'
+'Remove Memory' is looking at job Salt_N_Pepa/HP 345
+'Remove Memory' is a remover
+'Remove Memory' removed 'DDR 266'
+moving job to pass machine 'Install Memory'
+TIME = 30
+'Install Memory' is looking at job Salt_N_Pepa/HP 345
+'Install Memory' is an installer
+'Install Memory' installed 'DDR 266'
+moving job to pass machine 'Install SSD'
+'Install SSD' is looking at job Salt_N_Pepa/HP 345
+moving job to pass machine 'Install GPU'
+'Install GPU' is looking at job Salt_N_Pepa/HP 345
+'Install GPU' is an installer
+'Install GPU' installed 'Geforce 750M'
+moving job to fail machine 'Remove GPU'
+'Remove GPU' is looking at job Salt_N_Pepa/HP 345
+'Remove GPU' is a remover
+'Remove GPU' removed 'Geforce 750M'
+moving job to pass machine 'Install GPU'
+TIME = 33
+'Install GPU' is looking at job Salt_N_Pepa/HP 345
+'Install GPU' is an installer
+'Install GPU' installed 'Geforce 750M'
+moving job to pass machine 'Test'
+'Test' is looking at job Salt_N_Pepa/HP 345
+moving job to pass machine 'Approve'
+'Approve' is looking at job Salt_N_Pepa/HP 345
+Job arrived at 'Approve' a sink --- nothing to do.
+Job exiting system
+TIME = 34
+All Done
+Simulation over
+TIME = 34
+mimahmud@matrix:~/oop345/ms5> exit
+exit
+
+Script done on Thu 13 Apr 2017 04:36:19 PM EDT

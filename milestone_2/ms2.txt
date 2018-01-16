@@ -1,0 +1,528 @@
+Script started on Tue 11 Apr 2017 02:06:42 PM EDT
+mimahmud@matrix:~/oop345/ms2> whoami
+mimahmud
+mimahmud@matrix:~/oop345/ms2> cat *.cpp
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+class Task {
+	string taskName, taskSlots, taskPass, taskFail;
+public:
+	//Task(): taskSlots("1") {}
+	Task(vector <string> & row) {
+		switch (row.size())
+		{
+		case 4:
+			if (ValidTaskName(row[3]))
+			{
+				taskFail = row[3];
+			}
+			else
+			{
+				throw string("Expected a fail task name, found >") + row[3] + "<";
+			}
+
+		case 3:
+			if (ValidTaskName(row[2]))
+			{
+				taskPass = row[2];
+			}
+			else
+			{
+				throw string("Expected a pass task name, found >") + row[2] + "<";
+			}
+		case 2:
+			if (ValidTaskSlots(row[1]))
+			{
+				taskSlots = row[1];
+			}
+			else
+			{
+				throw string("Expected a slot task name, found >") + row[1] + "<";
+			}
+		case 1:
+			if (ValidTaskName(row[0]))
+			{
+				taskName = row[0];
+			}
+			else
+			{
+				throw string("Expected a name task name, found >") + row[0] + "<";
+			}
+
+			break;
+		default:
+			throw string("Expected 1,2,3 or 4 fields, but found ") + to_string(row.size());
+		}
+	}
+	void Print() {
+		cout << "[" << taskName << "] "
+			<< "[" << taskSlots << "] "
+			<< "[" << taskPass << "] "
+			<< "[" << taskFail << "] "
+			<< "\n";
+	}
+	void Graph(fstream& os) {
+		if (!taskPass.empty())
+		{
+			os << '"' << taskName << '"' << "->" << '"' << taskPass << '"' << "[color=green]" << ";\n";
+		}
+		if (!taskFail.empty())
+		{
+			os << '"' << taskName << '"' << "->" << '"' << taskFail << '"' << "[color=red]" << ";\n";
+		}
+		if (taskPass.empty() && taskFail.empty()) {
+			os << '"' << taskName << '"' << "\n";
+		}
+	}
+
+};
+
+class TaskManager {
+	vector <Task> taskList;
+public:
+	TaskManager(vector <vector<string>>& csvTask) {
+		int lineNumber = 0;
+		for (auto &row : csvTask) {
+			try {
+				lineNumber++;
+				taskList.push_back(move(Task(row)));
+			}
+			catch (const string& e) {
+				cerr << "Error on line " << lineNumber << ":" << e << "\n";
+			}
+		}
+	}
+	void Print() {
+		for (auto t : taskList) {
+			t.Print();
+		}
+	}
+	void Graph(string& filename) {
+		fstream os(filename, ios::out | ios::trunc);
+		if (os.is_open()) {
+			os << "digraph task {\n";
+			for (auto t : taskList) {
+				t.Graph(os);
+			}
+			os << "}\n";
+			os.close();
+
+			string cmd = "dot -Tpng " + filename + " > " + filename + ".png";
+
+			//string cmd = "C:\\\"Program Files (x86)\"\\Graphviz2.38\\bin\\dot.exe -Tpng " + filename + " > " + filename + ".png";
+			cout << "running -->" << cmd << "\n";
+			cout << "command returned " << system(cmd.c_str()) << " (zero is good)\n";
+		}
+	}
+};
+
+
+int main(int argc, char* argv[]) {
+	try {
+		if (argc != 3) {
+			throw string("Usage ") + argv[0] + string(" filename delimiter-char");
+		}
+		string filename = argv[1]; // First arg is file name
+		char delimiter = argv[2][0]; // Second arg, 1st char is delimiter
+
+		vector <vector<string>> csvData;
+		csvread(filename, delimiter, csvData);
+
+		//csvPrint(csvData);
+		TaskManager tm(csvData);
+		tm.Print();
+		string graphLine = filename + ".gv";
+		tm.Graph(graphLine);
+	}
+	catch (const string& e) {
+		cerr << e << "\n";
+	}
+}
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+//vector <vector<string>>& csvData;
+
+bool ValidItemName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '_')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidItemSequence(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isdigit(chr))
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidTaskName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '_')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidTaskSlots(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isdigit(chr))
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+void trim(string& s)
+{
+	while (s.size() > 0 && s[0] == ' ') // Kill leading spaces
+	{
+		s.erase(0, 1);
+	}
+	while (s.size() > 0 && s[s.size() - 1] == ' ') // Kill trailing spaces
+	{
+		s.erase(s.size() - 1, 1);
+	}
+}
+
+void csvPrint(vector <vector<string>>& csvData) {
+	for (size_t row = 0; row < csvData.size(); row++)
+	{
+		cout << "row " << row << " ";
+		cout << "(" << csvData[row].size() << " fields) ";
+		for (size_t column = 0; column < csvData[row].size(); column++)
+		{
+			cout << "[" << csvData[row][column] << "] ";
+		}
+		cout << "\n";
+	}
+	cout << "\nRange Based for print\n";
+	for (auto row : csvData) {
+		cout << "(" << row.size() << " fields)";
+		for (auto column : row) {
+			cout << "<" << column << "> ";
+		}
+		cout << "\n";
+	}
+}
+void csvread(string& filename, char delimiter, vector <vector<string>>& csvData) {
+	fstream is(filename, ios::in);
+	if (!is.is_open())
+	{
+		throw string("Cannot open file ") + filename;
+	}
+	string line;
+	while (getline(is, line))
+	{
+		auto cr = line.find('\r');
+		if (cr != string::npos)
+		{
+			line.erase(cr);
+		}
+		//cout << "line -->" << line << "<---\n";
+		vector <string> fields;
+		string field;
+		size_t i = 0;
+
+		while (i < line.size())
+		{
+			if (line[i] != delimiter) {
+				field += line[i];
+			}
+			else
+			{
+				trim(field);
+				fields.push_back(move(field));
+			}
+			i++;
+		}
+		// If last entry was not a delimiter?
+		if (!field.empty())
+		{
+			trim(field);
+			fields.push_back(move(field));
+		}
+		csvData.push_back(move(fields));
+	}
+	is.close();
+}
+
+bool ValidCusName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '\'')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+bool ValidProductName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '\'' || chr == '#' || chr == '$')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidOrderName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '_')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidOrderSequence(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isdigit(chr))
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+mimahmud@matrix:~/oop345/ms2> cat *.cppwhoami[Kclear[Kat FishTankTasks.dat.gv.png[Km2 FishTankTasks.dat ","[Kg++ -std=c++0x -o m2  task.cpp util.cpp
+mimahmud@matrix:~/oop345/ms2> g++ -std=c++0x -o m2  task.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Ccat *.cpp[Kwhoami[Kclear[Kat FishTankTasks.dat.gv.png[Km2 FishTankTasks.dat ","
+[SetupTank] [2] [AddGravel] [] 
+[RemoveTank] [1] [SetupTank] [] 
+[AddGravel] [5] [AssembleFilter] [RemoveGravel] 
+[RemoveGravel] [1] [AddGravel] [] 
+[AssembleFilter] [5] [InstallLighting] [DisassembleFilter] 
+[DisassembleFilter] [1] [AssembleFilter] [] 
+[InstallLighting] [2] [AddHeater] [ReplaceLighting] 
+[ReplaceLighting] [1] [InstallLighting] [] 
+[AddHeater] [5] [AddWater] [RemoveHeater] 
+[RemoveHeater] [1] [AddHeater] [] 
+[AddWater] [5] [AddRocks] [DrainWater] 
+[DrainWater] [1] [AddWater] [] 
+[AddRocks] [8] [AddFish] [RemoveRocks] 
+[RemoveRocks] [1] [AddRocks] [AddFish] 
+[AddFish] [10] [AddCoral] [CatchFish] 
+[CatchFish] [1] [AddFish] [AddCoral] 
+[AddCoral] [5] [AddToys] [RemoveCoral] 
+[RemoveCoral] [1] [AddCoral] [AddToys] 
+[AddToys] [4] [] [] 
+[RemoveToys] [1] [] [] 
+running -->dot -Tpng FishTankTasks.dat.gv > FishTankTasks.dat.gv.png
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms2> m2 FishTankTasks.dat ","g++ -std=c++0x -o m2  task.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Ccat *.cpp[Kwhoami[Kclear[Kat FishTankTasks.dat.gv.png[K[K[K[K
+digraph task {
+"SetupTank"->"AddGravel"[color=green];
+"RemoveTank"->"SetupTank"[color=green];
+"AddGravel"->"AssembleFilter"[color=green];
+"AddGravel"->"RemoveGravel"[color=red];
+"RemoveGravel"->"AddGravel"[color=green];
+"AssembleFilter"->"InstallLighting"[color=green];
+"AssembleFilter"->"DisassembleFilter"[color=red];
+"DisassembleFilter"->"AssembleFilter"[color=green];
+"InstallLighting"->"AddHeater"[color=green];
+"InstallLighting"->"ReplaceLighting"[color=red];
+"ReplaceLighting"->"InstallLighting"[color=green];
+"AddHeater"->"AddWater"[color=green];
+"AddHeater"->"RemoveHeater"[color=red];
+"RemoveHeater"->"AddHeater"[color=green];
+"AddWater"->"AddRocks"[color=green];
+"AddWater"->"DrainWater"[color=red];
+"DrainWater"->"AddWater"[color=green];
+"AddRocks"->"AddFish"[color=green];
+"AddRocks"->"RemoveRocks"[color=red];
+"RemoveRocks"->"AddRocks"[color=green];
+"RemoveRocks"->"AddFish"[color=red];
+"AddFish"->"AddCoral"[color=green];
+"AddFish"->"CatchFish"[color=red];
+"CatchFish"->"AddFish"[color=green];
+"CatchFish"->"AddCoral"[color=red];
+"AddCoral"->"AddToys"[color=green];
+"AddCoral"->"RemoveCoral"[color=red];
+"RemoveCoral"->"AddCoral"[color=green];
+"RemoveCoral"->"AddToys"[color=red];
+"AddToys"
+"RemoveToys"
+}
+mimahmud@matrix:~/oop345/ms2> cat FishTankTasks.dat.gvm2 FishTankTasks.dat ","g++ -std=c++0x -o m2  task.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm2 FishTankTasks.dat ","[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[KTaskList_Clean.dat "|"
+[Power Supply] [4] [Motherboard] [] 
+[Motherboard] [3] [CPU] [Remove CPU] 
+[Remove CPU] [1] [CPU] [] 
+[CPU] [5] [Memory] [Remove CPU] 
+[Remove CPU] [1] [CPU] [] 
+[Memory] [4] [SSD] [Remove Memory] 
+[Remove Memory] [1] [Memory] [] 
+[SSD] [4] [GPU] [Remove SSD] 
+[Remove SSD] [1] [SSD] [] 
+[GPU] [3] [Test] [] 
+[Test] [4] [Approve] [Repair] 
+[Repair] [] [] [] 
+[Approve] [] [] [] 
+running -->dot -Tpng TaskList_Clean.dat.gv > TaskList_Clean.dat.gv.png
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms2> m2 TaskList_Clean.dat "|"[K[K[K[K.gv[C TaskList_Clean.dat.gv[K TaskList_Clean.dat.gv[Kc TaskList_Clean.dat.gva TaskList_Clean.dat.gvt TaskList_Clean.dat.gv
+digraph task {
+"Power Supply"->"Motherboard"[color=green];
+"Motherboard"->"CPU"[color=green];
+"Motherboard"->"Remove CPU"[color=red];
+"Remove CPU"->"CPU"[color=green];
+"CPU"->"Memory"[color=green];
+"CPU"->"Remove CPU"[color=red];
+"Remove CPU"->"CPU"[color=green];
+"Memory"->"SSD"[color=green];
+"Memory"->"Remove Memory"[color=red];
+"Remove Memory"->"Memory"[color=green];
+"SSD"->"GPU"[color=green];
+"SSD"->"Remove SSD"[color=red];
+"Remove SSD"->"SSD"[color=green];
+"GPU"->"Test"[color=green];
+"Test"->"Approve"[color=green];
+"Test"->"Repair"[color=red];
+"Repair"
+"Approve"
+}
+mimahmud@matrix:~/oop345/ms2> cat TaskList_Clean.dat.gvm2 TaskList_Clean.dat "|"[C[K[K[K[K[K[K[K[K[K[K[K[K[KWhitespace.dat
+Usage m2 filename delimiter-char
+mimahmud@matrix:~/oop345/ms2> m2 TaskList_Whitespace.dat "|"
+[Power Supply] [4] [Motherboard] [] 
+[Motherboard] [3] [CPU] [Remove CPU] 
+[Remove CPU] [1] [CPU] [] 
+[CPU] [5] [Memory] [Remove CPU] 
+[Remove CPU] [1] [CPU] [] 
+[Memory] [4] [SSD] [Remove Memory] 
+[Remove Memory] [1] [Memory] [] 
+[SSD] [4] [GPU] [Remove SSD] 
+[Remove SSD] [1] [SSD] [] 
+[GPU] [3] [Test] [] 
+[Test] [4] [Approve] [Repair] 
+[Repair] [] [] [] 
+[Approve] [] [] [] 
+running -->dot -Tpng TaskList_Whitespace.dat.gv > TaskList_Whitespace.dat.gv.png
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms2> m2 TaskList_Whitespace.dat "|"[K[C[C TaskList_Whitespace.dat[K TaskList_Whitespace.dat[Kc TaskList_Whitespace.data TaskList_Whitespace.datt TaskList_Whitespace.dat[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C.gv
+digraph task {
+"Power Supply"->"Motherboard"[color=green];
+"Motherboard"->"CPU"[color=green];
+"Motherboard"->"Remove CPU"[color=red];
+"Remove CPU"->"CPU"[color=green];
+"CPU"->"Memory"[color=green];
+"CPU"->"Remove CPU"[color=red];
+"Remove CPU"->"CPU"[color=green];
+"Memory"->"SSD"[color=green];
+"Memory"->"Remove Memory"[color=red];
+"Remove Memory"->"Memory"[color=green];
+"SSD"->"GPU"[color=green];
+"SSD"->"Remove SSD"[color=red];
+"Remove SSD"->"SSD"[color=green];
+"GPU"->"Test"[color=green];
+"Test"->"Approve"[color=green];
+"Test"->"Repair"[color=red];
+"Repair"
+"Approve"
+}
+mimahmud@matrix:~/oop345/ms2> cat TaskList_Whitespace.dat.gvm2 TaskList_Whitespace.dat "|".dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[K.dat "|"[KM.dat "|"a.dat "|"l.dat "|"f.dat "|"o.dat "|"r.dat "|"m.dat "|"e.dat "|"d.dat "|"[C[C[C[C[C[C[C[C
+Error on line 12:Expected a slot task name, found ><
+Error on line 13:Expected a name task name, found >Test / 4 / Approve / Repair<
+Error on line 14:Expected a slot task name, found >Remove SSD<
+Error on line 15:Expected 1,2,3 or 4 fields, but found 6
+Error on line 16:Expected a slot task name, found >SSD<
+[Power Supply] [4] [Motherboard] [] 
+[Motherboard] [3] [CPU] [Remove CPU] 
+[Remove CPU] [1] [CPU] [] 
+[CPU] [5] [Memory] [Remove CPU] 
+[Remove CPU] [1] [CPU] [] 
+[Memory] [4] [SSD] [Remove Memory] 
+[Remove Memory] [1] [Memory] [] 
+[SSD] [4] [GPU] [Remove SSD] 
+[Remove SSD] [1] [SSD] [] 
+[GPU] [3] [Test] [] 
+[Test] [4] [Approve] [Repair] 
+[Repair] [] [] [] 
+[Approve] [] [] [] 
+running -->dot -Tpng TaskList_Malformed.dat.gv > TaskList_Malformed.dat.gv.png
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms2> m2 TaskList_Malformed.dat "|" TaskList_Malformed.dat "|"[K TaskList_Malformed.dat "|"[Kc TaskList_Malformed.dat "|"a TaskList_Malformed.dat "|"t TaskList_Malformed.dat "|"[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[K[K[K[K.gv
+digraph task {
+"Power Supply"->"Motherboard"[color=green];
+"Motherboard"->"CPU"[color=green];
+"Motherboard"->"Remove CPU"[color=red];
+"Remove CPU"->"CPU"[color=green];
+"CPU"->"Memory"[color=green];
+"CPU"->"Remove CPU"[color=red];
+"Remove CPU"->"CPU"[color=green];
+"Memory"->"SSD"[color=green];
+"Memory"->"Remove Memory"[color=red];
+"Remove Memory"->"Memory"[color=green];
+"SSD"->"GPU"[color=green];
+"SSD"->"Remove SSD"[color=red];
+"Remove SSD"->"SSD"[color=green];
+"GPU"->"Test"[color=green];
+"Test"->"Approve"[color=green];
+"Test"->"Repair"[color=red];
+"Repair"
+"Approve"
+}
+mimahmud@matrix:~/oop345/ms2> exit
+exit
+
+Script done on Tue 11 Apr 2017 02:10:37 PM EDT

@@ -1,0 +1,44 @@
+digraph ordergraph {
+"Start
+1"->"Install Power Supply"[color=blue];
+"Install Power Supply
+4"->"Install Motherboard"[color=blue];
+"Install Power Supply
+4"->"Remove Power Supply"[color=blue];
+"Remove Power Supply
+2"->"Install Power Supply"[color=blue];
+"Install Motherboard
+3"->"Install CPU"[color=blue];
+"Install Motherboard
+3"->"Remove Motherboard"[color=blue];
+"Remove Motherboard
+1"->"Install Motherboard"[color=blue];
+"Install CPU
+5"->"Install Memory"[color=blue];
+"Install CPU
+5"->"Remove CPU"[color=blue];
+"Remove CPU
+1"->"Install CPU"[color=blue];
+"Install Memory
+4"->"Install SSD"[color=blue];
+"Install Memory
+4"->"Remove Memory"[color=blue];
+"Remove Memory
+1"->"Install Memory"[color=blue];
+"Install SSD
+4"->"Install GPU"[color=blue];
+"Install SSD
+4"->"Remove SSD"[color=blue];
+"Remove SSD
+1"->"Install SSD"[color=blue];
+"Install GPU
+3"->"Test"[color=blue];
+"Install GPU
+3"->"Remove GPU"[color=blue];
+"Remove GPU
+3"->"Install GPU"[color=blue];
+"Test
+4"->"Approve"[color=blue];
+"Test
+4"->"Repair"[color=blue];
+}

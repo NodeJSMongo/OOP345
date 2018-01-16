@@ -1,0 +1,820 @@
+Script started on Tue 11 Apr 2017 02:47:03 PM EDT
+mimahmud@matrix:~/oop345/ms3> whoami
+mimahmud
+mimahmud@matrix:~/oop345/ms3> ls
+[0m[00mCustomerOrders_Clean.dat[0m       [00mFishTankItems.dat[0m        [00mitem.cpp[0m   [00mutil.cpp[0m
+[00mCustomerOrders_Malformed.dat[0m   [00mItemList_Clean.dat[0m       [00mms3.txt[0m    [00mutil.h[0m
+[00mCustomerOrders_Whitespace.dat[0m  [00mItemList_Malformed.dat[0m   [00morder.cpp[0m
+[00mFishTankCustomerOrders.dat[0m     [00mItemList_Whitespace.dat[0m  [00mtask.cpp[0m
+mimahmud@matrix:~/oop345/ms3> g++ -std=c++o[K0x v[K-o ms[K3 item.cpp util.cpp[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[Kcat *.cpp *.h
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+
+class item {
+	string itemName, itemInstaller, itemRemover, itemSequence, itemDescription;
+public:
+	item(vector <string> & row) {
+		switch (row.size())
+		{
+		case 5:
+			itemDescription = row[4];
+		case 4:
+			if (ValidItemSequence(row[3]))
+			{
+				itemSequence = row[3];
+			}
+			else
+			{
+				throw string("Expected a sequence number, found >") + row[3] + "<";
+			}
+
+			//case 3:
+			if (ValidTaskName(row[2]))
+			{
+				itemRemover = row[2];
+			}
+			else
+			{
+				throw string("Expected remover task name, found >") + row[2] + "<";
+			}
+			//case 2:
+			if (ValidTaskName(row[1]))
+			{
+				itemInstaller = row[1];
+			}
+			else
+			{
+				throw string("Expected installer task name, found >") + row[1] + "<";
+			}
+			//case 1:
+			if (ValidItemName(row[0]))
+			{
+				itemName = row[0];
+			}
+			else
+			{
+				throw string("Expected item name, found >") + row[0] + "<";
+			}
+
+			break;
+		default:
+			throw string("Expected 1,2,3 or 4 fields, but found ") + to_string(row.size());
+		}
+	}
+	void Print() {
+		cout << "[" << itemName << "] "
+			<< "[" << itemInstaller << "] "
+			<< "[" << itemRemover << "] "
+			<< "[" << itemSequence << "] "
+			<< "[" << itemDescription << "] "
+			<< "\n";
+	}
+	void Graph(fstream& os) {
+		os << '"' << "Item\n" << itemName << '"'
+			<< "->"
+			<< '"' << "Installer\n" << itemInstaller << '"' << "[color=green]" << ";\n";
+
+		os << '"' << "Item\n" << itemName << '"'
+			<< "->"
+			<< '"' << "Remover\n" << itemRemover << '"' << "[color=red]" << ";\n";
+	}
+
+};
+
+class itemManager {
+	vector <item> itemList;
+public:
+	itemManager(vector <vector<string>>& csvitem) {
+		int lineNumber = 0;
+		for (auto &row : csvitem) {
+			try {
+				lineNumber++;
+				itemList.push_back(move(item(row)));
+			}
+			catch (const string& e) {
+				cerr << "Error on line " << lineNumber << ":" << e << "\n";
+			}
+		}
+	}
+	void Print() {
+		int lineNumber = 0;
+		for (auto t : itemList) {
+			lineNumber++;
+			cout << lineNumber << ": ";
+			t.Print();
+		}
+	}
+	void Graph(string& filename) {
+		fstream os(filename, ios::out | ios::trunc);
+		if (os.is_open()) {
+			os << "digraph item {\n";
+			for (auto t : itemList) {
+				t.Graph(os);
+			}
+			os << "}\n";
+			os.close();
+
+
+			string cmd = "dot -Tpng " + filename + " > " + filename + ".png";
+
+			//string cmd = "C:\\\"Program Files (x86)\"\\Graphviz2.38\\bin\\dot.exe -Tpng " + filename + " > " + filename + ".png";
+			cout << "running -->" << cmd << "\n";
+			cout << "command returned " << system(cmd.c_str()) << " (zero is good)\n";
+		}
+	}
+};
+
+
+int main(int argc, char* argv[]) {
+	try {
+		if (argc != 3) {
+			throw string("Usage ") + argv[0] + string(" filename delimiter-char");
+		}
+		string filename = argv[1]; // First arg is file name
+		char delimiter = argv[2][0]; // Second arg, 1st char is delimiter
+
+		vector <vector<string>> csvData;
+		csvread(filename, delimiter, csvData);
+
+		//csvPrint(csvData);
+		itemManager im(csvData);
+		im.Print();
+		string graphLine = filename + ".gv";
+		im.Graph(graphLine);
+	}
+	catch (const string& e) {
+		cerr << e << "\n";
+	}
+}
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+
+
+class order {
+	string orderCustomer, orderProduct;
+	vector<string> itemsOrdered;
+public:
+	//order(): orderSlots("1") {}
+	order(vector <string> & row) {
+		if (row.size() < 3) {
+			throw string("Expected 3 or more, found ") + to_string(row.size());
+		}
+		if (ValidCusName(row[0])) {
+			orderCustomer = row[0];
+		}
+		else
+		{
+			throw string("expected customer name, found [") + row[0] + "]";
+		}
+		if (ValidProductName(row[1])) {
+			orderProduct = row[1];
+		}
+		else
+		{
+			throw string("expected product name, found [") + row[0] + "]";
+		}
+
+		for (size_t i = 2; i < row.size(); i++) {
+			if (ValidItemName(row[i]))
+			{
+				itemsOrdered.push_back(move(row[i]));
+			}
+			else
+			{
+				throw string("expected item name, found [") + row[i] + "]";
+			}
+		}
+
+
+	}
+	void Print() {
+		cout << "[" << orderCustomer << "] "
+			<< "[" << orderProduct << "] "
+			<< "\n";
+		for (auto e : itemsOrdered) {
+			cout << "[" << e << "] ";
+		}
+		cout << "\n";
+	}
+	void Graph(fstream& os) {
+		for (auto e : itemsOrdered) {
+			os << '"' << orderCustomer << "\n" << orderProduct << '"'
+				<< "->"
+				<< '"' << e << '"' << "[color=blue]" << ";\n";
+		}
+	}
+
+};
+
+class orderManager {
+	vector <order> orderList;
+public:
+	orderManager(vector <vector<string>>& csvorder) {
+		int lineNumber = 0;
+		for (auto &row : csvorder) {
+			try {
+				lineNumber++;
+				orderList.push_back(move(order(row)));
+			}
+			catch (const string& e) {
+				cerr << "Error on line " << lineNumber << ":" << e << "\n";
+			}
+		}
+	}
+	void Print() {
+		int lineNumber = 0;
+		for (auto t : orderList) {
+			lineNumber++;
+			cout << lineNumber << ": ";
+			t.Print();
+		}
+	}
+	void Graph(string& filename) {
+		fstream os(filename, ios::out | ios::trunc);
+		if (os.is_open()) {
+			os << "digraph order {\n";
+			for (auto t : orderList) {
+				t.Graph(os);
+			}
+			os << "}\n";
+			os.close();
+
+			 string cmd = "dot -Tpng " + filename + " > " + filename + ".png";
+
+			// windows string cmd = "C:\\\"Program Files (x86)\"\\Graphviz2.38\\bin\\dot.exe -Tpng " + filename + " > " + filename + ".png";
+			cout << "running -->" << cmd << "\n";
+			cout << "command returned " << system(cmd.c_str()) << " (zero is good)\n";
+		}
+	}
+};
+
+
+int main(int argc, char* argv[]) {
+	try {
+		if (argc != 3) {
+			throw string("Usage ") + argv[0] + string(" filename delimiter-char");
+		}
+		string filename = argv[1]; // First arg is file name
+		char delimiter = argv[2][0]; // Second arg, 1st char is delimiter
+
+		vector <vector<string>> csvData;
+		csvread(filename, delimiter, csvData);
+
+		//csvPrint(csvData);
+		orderManager om(csvData);
+		om.Print();
+		string graphLine = filename + ".gv";
+		om.Graph(graphLine);
+	}
+	catch (const string& e) {
+		cerr << e << "\n";
+	}
+}
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+class Task {
+	string taskName, taskSlots, taskPass, taskFail;
+public:
+	//Task(): taskSlots("1") {}
+	Task(vector <string> & row) {
+		switch (row.size())
+		{
+		case 4:
+			if (ValidTaskName(row[3]))
+			{
+				taskFail = row[3];
+			}
+			else
+			{
+				throw string("Expected a fail task name, found >") + row[3] + "<";
+			}
+
+		case 3:
+			if (ValidTaskName(row[2]))
+			{
+				taskPass = row[2];
+			}
+			else
+			{
+				throw string("Expected a pass task name, found >") + row[2] + "<";
+			}
+		case 2:
+			if (ValidTaskSlots(row[1]))
+			{
+				taskSlots = row[1];
+			}
+			else
+			{
+				throw string("Expected a slot task name, found >") + row[1] + "<";
+			}
+		case 1:
+			if (ValidTaskName(row[0]))
+			{
+				taskName = row[0];
+			}
+			else
+			{
+				throw string("Expected a name task name, found >") + row[0] + "<";
+			}
+
+			break;
+		default:
+			throw string("Expected 1,2,3 or 4 fields, but found ") + to_string(row.size());
+		}
+	}
+	void Print() {
+		cout << "[" << taskName << "] "
+			<< "[" << taskSlots << "] "
+			<< "[" << taskPass << "] "
+			<< "[" << taskFail << "] "
+			<< "\n";
+	}
+	void Graph(fstream& os) {
+		if (!taskPass.empty())
+		{
+			os << '"' << taskName << '"' << "->" << '"' << taskPass << '"' << "[color=green]" << ";\n";
+		}
+		if (!taskFail.empty())
+		{
+			os << '"' << taskName << '"' << "->" << '"' << taskFail << '"' << "[color=red]" << ";\n";
+		}
+		if (taskPass.empty() && taskFail.empty()) {
+			os << '"' << taskName << '"' << "\n";
+		}
+	}
+
+};
+
+class TaskManager {
+	vector <Task> taskList;
+public:
+	TaskManager(vector <vector<string>>& csvTask) {
+		int lineNumber = 0;
+		for (auto &row : csvTask) {
+			try {
+				lineNumber++;
+				taskList.push_back(move(Task(row)));
+			}
+			catch (const string& e) {
+				cerr << "Error on line " << lineNumber << ":" << e << "\n";
+			}
+		}
+	}
+	void Print() {
+		for (auto t : taskList) {
+			t.Print();
+		}
+	}
+	void Graph(string& filename) {
+		fstream os(filename, ios::out | ios::trunc);
+		if (os.is_open()) {
+			os << "digraph task {\n";
+			for (auto t : taskList) {
+				t.Graph(os);
+			}
+			os << "}\n";
+			os.close();
+
+			string cmd = "dot -Tpng " + filename + " > " + filename + ".png";
+
+			//string cmd = "C:\\\"Program Files (x86)\"\\Graphviz2.38\\bin\\dot.exe -Tpng " + filename + " > " + filename + ".png";
+			cout << "running -->" << cmd << "\n";
+			cout << "command returned " << system(cmd.c_str()) << " (zero is good)\n";
+		}
+	}
+};
+
+
+int main(int argc, char* argv[]) {
+	try {
+		if (argc != 3) {
+			throw string("Usage ") + argv[0] + string(" filename delimiter-char");
+		}
+		string filename = argv[1]; // First arg is file name
+		char delimiter = argv[2][0]; // Second arg, 1st char is delimiter
+
+		vector <vector<string>> csvData;
+		csvread(filename, delimiter, csvData);
+
+		//csvPrint(csvData);
+		TaskManager tm(csvData);
+		tm.Print();
+		string graphLine = filename + ".gv";
+		tm.Graph(graphLine);
+	}
+	catch (const string& e) {
+		cerr << e << "\n";
+	}
+}
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include "util.h"
+
+using namespace std;
+
+//vector <vector<string>>& csvData;
+
+bool ValidItemName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '_')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidItemSequence(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isdigit(chr))
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidTaskName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '_')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidTaskSlots(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isdigit(chr))
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+void trim(string& s)
+{
+	while (s.size() > 0 && s[0] == ' ') // Kill leading spaces
+	{
+		s.erase(0, 1);
+	}
+	while (s.size() > 0 && s[s.size() - 1] == ' ') // Kill trailing spaces
+	{
+		s.erase(s.size() - 1, 1);
+	}
+}
+
+void csvPrint(vector <vector<string>>& csvData) {
+	for (size_t row = 0; row < csvData.size(); row++)
+	{
+		cout << "row " << row << " ";
+		cout << "(" << csvData[row].size() << " fields) ";
+		for (size_t column = 0; column < csvData[row].size(); column++)
+		{
+			cout << "[" << csvData[row][column] << "] ";
+		}
+		cout << "\n";
+	}
+	cout << "\nRange Based for print\n";
+	for (auto row : csvData) {
+		cout << "(" << row.size() << " fields)";
+		for (auto column : row) {
+			cout << "<" << column << "> ";
+		}
+		cout << "\n";
+	}
+}
+void csvread(string& filename, char delimiter, vector <vector<string>>& csvData) {
+	fstream is(filename, ios::in);
+	if (!is.is_open())
+	{
+		throw string("Cannot open file ") + filename;
+	}
+	string line;
+	while (getline(is, line))
+	{
+		auto cr = line.find('\r');
+		if (cr != string::npos)
+		{
+			line.erase(cr);
+		}
+		//cout << "line -->" << line << "<---\n";
+		vector <string> fields;
+		string field;
+		size_t i = 0;
+
+		while (i < line.size())
+		{
+			if (line[i] != delimiter) {
+				field += line[i];
+			}
+			else
+			{
+				trim(field);
+				fields.push_back(move(field));
+			}
+			i++;
+		}
+		// If last entry was not a delimiter?
+		if (!field.empty())
+		{
+			trim(field);
+			fields.push_back(move(field));
+		}
+		csvData.push_back(move(fields));
+	}
+	is.close();
+}
+
+bool ValidCusName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '\'')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+bool ValidProductName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '\'' || chr == '#' || chr == '$')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidOrderName(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isspace(chr) || isalnum(chr) || chr == '_')
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool ValidOrderSequence(string& t) {
+	if (t.empty())
+	{
+		return false;
+	}
+	for (auto chr : t) {
+		if (isdigit(chr))
+		{
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+
+using namespace std;
+void trim(string& s);
+void csvPrint(vector <vector<string>>& csvData);
+void csvread(string& filename, char delimiter, vector <vector<string>>& csvData);
+bool ValidTaskName(string& t);
+bool ValidTaskSlots(string& t);
+bool ValidItemName(string& t);
+bool ValidItemSequence(string& t);
+bool ValidCusName(string& t);
+bool ValidProductName(string& t);
+bool ValidOrderName(string& t);
+bool ValidOrderSequence(string& t);
+mimahmud@matrix:~/oop345/ms3> 
+mimahmud@matrix:~/oop345/ms3> 
+mimahmud@matrix:~/oop345/ms3> g++ -std=c++0x -o m3 item.cpp util.cpp
+mimahmud@matrix:~/oop345/ms3> m3 FishTankItems.dat ","
+1: [Tank] [SetupTank] [RemoveTank] [100] [Glass Tank to use] 
+2: [Gravel] [AddGravel] [RemoveGravel] [200] [Gravel for the bottom of the tank] 
+3: [Filter] [AssembleFilter] [DisassembleFilter] [300] [Cleaning filtration system] 
+4: [Lighting] [InstallLighting] [ReplaceLighting] [400] [Hood lighting system] 
+5: [Heater] [AddHeater] [RemoveHeater] [500] [Heater for maintaining water temperature] 
+6: [Water] [AddWater] [DrainWater] [600] [Clean water for the tank] 
+7: [Rocks] [AddRocks] [RemoveRocks] [700] [Live Reef Rocks] 
+8: [Fish] [AddFish] [CatchFish] [800] [Live fish to enjoy] 
+9: [Coral] [AddCoral] [RemoveCoral] [900] [Live coral to enjoy] 
+10: [Toys] [AddToys] [RemoveToys] [1000] [Artificial rocks and tank nicknacks] 
+running -->dot -Tpng FishTankItems.dat.gv > FishTankItems.dat.gv.png
+Warning: FishTankItems.dat.gv:2: string ran past end of line
+Warning: FishTankItems.dat.gv:4: string ran past end of line
+Warning: FishTankItems.dat.gv:5: string ran past end of line
+Warning: FishTankItems.dat.gv:7: string ran past end of line
+Warning: FishTankItems.dat.gv:8: string ran past end of line
+Warning: FishTankItems.dat.gv:10: string ran past end of line
+Warning: FishTankItems.dat.gv:11: string ran past end of line
+Warning: FishTankItems.dat.gv:13: string ran past end of line
+Warning: FishTankItems.dat.gv:14: string ran past end of line
+Warning: FishTankItems.dat.gv:16: string ran past end of line
+Warning: FishTankItems.dat.gv:17: string ran past end of line
+Warning: FishTankItems.dat.gv:19: string ran past end of line
+Warning: FishTankItems.dat.gv:20: string ran past end of line
+Warning: FishTankItems.dat.gv:22: string ran past end of line
+Warning: FishTankItems.dat.gv:23: string ran past end of line
+Warning: FishTankItems.dat.gv:25: string ran past end of line
+Warning: FishTankItems.dat.gv:26: string ran past end of line
+Warning: FishTankItems.dat.gv:28: string ran past end of line
+Warning: FishTankItems.dat.gv:29: string ran past end of line
+Warning: FishTankItems.dat.gv:31: string ran past end of line
+Warning: FishTankItems.dat.gv:32: string ran past end of line
+Warning: FishTankItems.dat.gv:34: string ran past end of line
+Warning: FishTankItems.dat.gv:35: string ran past end of line
+Warning: FishTankItems.dat.gv:37: string ran past end of line
+Warning: FishTankItems.dat.gv:38: string ran past end of line
+Warning: FishTankItems.dat.gv:40: string ran past end of line
+Warning: FishTankItems.dat.gv:41: string ran past end of line
+Warning: FishTankItems.dat.gv:43: string ran past end of line
+Warning: FishTankItems.dat.gv:44: string ran past end of line
+Warning: FishTankItems.dat.gv:46: string ran past end of line
+Warning: FishTankItems.dat.gv:47: string ran past end of line
+Warning: FishTankItems.dat.gv:49: string ran past end of line
+Warning: FishTankItems.dat.gv:50: string ran past end of line
+Warning: FishTankItems.dat.gv:52: string ran past end of line
+Warning: FishTankItems.dat.gv:53: string ran past end of line
+Warning: FishTankItems.dat.gv:55: string ran past end of line
+Warning: FishTankItems.dat.gv:56: string ran past end of line
+Warning: FishTankItems.dat.gv:58: string ran past end of line
+Warning: FishTankItems.dat.gv:59: string ran past end of line
+Warning: FishTankItems.dat.gv:61: string ran past end of line
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms3> m3 FishTankItems.dat ","g++ -std=c++0x -o m3 item.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm3 FishTankItems.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[KI.dat ","t.dat ","e.dat ","m.dat ","L.dat ","i.dat ","s.dat ","t.dat ","_.dat ","c.dat ",".dat ","[KC.dat ","L.dat ",".dat ","[Kl.dat ","e.dat ","a.dat ","n.dat ","
+Error on line 1:Expected 1,2,3 or 4 fields, but found 1
+Error on line 2:Expected 1,2,3 or 4 fields, but found 1
+Error on line 3:Expected 1,2,3 or 4 fields, but found 1
+Error on line 4:Expected 1,2,3 or 4 fields, but found 1
+running -->dot -Tpng ItemList_Clean.dat.gv > ItemList_Clean.dat.gv.png
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms3> m3 ItemList_Clean.dat ","[C"[K|"
+1: [CPU] [CPU] [Remove CPU] [300] [Central Processing Unit] 
+2: [Memory] [Memory] [Remove Memory] [400] [Samsung Memory Stick] 
+3: [GPU] [GPU] [Remove GPU] [500] [Nvidia Geforce 750M] 
+4: [Power Supply] [Power Supply] [Remove Power Supply] [100] [] 
+running -->dot -Tpng ItemList_Clean.dat.gv > ItemList_Clean.dat.gv.png
+Warning: ItemList_Clean.dat.gv:2: string ran past end of line
+Warning: ItemList_Clean.dat.gv:4: string ran past end of line
+Warning: ItemList_Clean.dat.gv:5: string ran past end of line
+Warning: ItemList_Clean.dat.gv:7: string ran past end of line
+Warning: ItemList_Clean.dat.gv:8: string ran past end of line
+Warning: ItemList_Clean.dat.gv:10: string ran past end of line
+Warning: ItemList_Clean.dat.gv:11: string ran past end of line
+Warning: ItemList_Clean.dat.gv:13: string ran past end of line
+Warning: ItemList_Clean.dat.gv:14: string ran past end of line
+Warning: ItemList_Clean.dat.gv:16: string ran past end of line
+Warning: ItemList_Clean.dat.gv:17: string ran past end of line
+Warning: ItemList_Clean.dat.gv:19: string ran past end of line
+Warning: ItemList_Clean.dat.gv:20: string ran past end of line
+Warning: ItemList_Clean.dat.gv:22: string ran past end of line
+Warning: ItemList_Clean.dat.gv:23: string ran past end of line
+Warning: ItemList_Clean.dat.gv:25: string ran past end of line
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms3> g++ cd[K[K[K[K[K[Km3 ItemList_Clean.dat "|","FishTankItems.dat ","[Kg++ -std=c++0x -o m3 item.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Ccat *.cpp *.h[Kg++ -std=c++0x -o m3 item.cpp util.cpp[C.cpp util.cpp[K.cpp util.cpp[K.cpp util.cpp[K.cpp util.cpp[Ko.cpp util.cppr.cpp util.cppd.cpp util.cppe.cpp util.cppr.cpp util.cpp
+mimahmud@matrix:~/oop345/ms3> g++ -std=c++0x -o m3 order.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm3 ItemList_Clean.dat "|"[K[C_Clean.dat "|"[K_Clean.dat "|"[K_Clean.dat "|"[K_Clean.dat "|"[K_Clean.dat "|"[K_Clean.dat "|"[K_Clean.dat "|"[K_Clean.dat "|"[KC_Clean.dat "|"u_Clean.dat "|"s_Clean.dat "|"t_Clean.dat "|"o_Clean.dat "|"m_Clean.dat "|"e_Clean.dat "|"r_Clean.dat "|"O_Clean.dat "|"r_Clean.dat "|"d_Clean.dat "|"e_Clean.dat "|"r_Clean.dat "|"s_Clean.dat "|"[C[C[C[C[C[C[C[C[C[C[C[C[C[C
+1: [Fardad Soleimanloo] [Dell Precision 3600] 
+[CPU] [Memory] [Memory] 
+2: [Joseph Hughes] [HP Z230] 
+[CPU] [Memory] 
+3: [Chris Szalwinski] [HP Z350] 
+[CPU] [Memory] [SSD] [GPU] 
+4: [Elliott Coleshill] [HP Apollo 1000] 
+[CPU] [MEMORY] [Power Supply] [GPU] 
+running -->dot -Tpng CustomerOrders_Clean.dat.gv > CustomerOrders_Clean.dat.gv.png
+Warning: CustomerOrders_Clean.dat.gv:2: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:3: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:4: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:5: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:6: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:7: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:8: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:9: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:10: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:11: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:12: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:13: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:14: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:15: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:16: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:17: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:18: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:19: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:20: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:21: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:22: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:23: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:24: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:25: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:26: string ran past end of line
+Warning: CustomerOrders_Clean.dat.gv:27: string ran past end of line
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms3> m3 CustomerOrders_Clean.dat "|"g++ -std=c++0x -o m3 order.cpp util.cpp[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cm3 CustomerOrders_Clean.dat "|"[K[C[C[C[C[C[CFCustomerOrders_Clean.dat "|"iCustomerOrders_Clean.dat "|"sCustomerOrders_Clean.dat "|"hCustomerOrders_Clean.dat "|"TCustomerOrders_Clean.dat "|"aCustomerOrders_Clean.dat "|"nCustomerOrders_Clean.dat "|"kCustomerOrders_Clean.dat "|"[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C"[K,"
+Cannot open file FishTankCustomerOrders_Clean.dat
+mimahmud@matrix:~/oop345/ms3> m3 FishTankCustomerOrders_Clean.dat ","[C[C.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K.dat ","[K
+1: [Chloe Coleshill] [Gold Fish Tank] 
+[Tank] [Gravel] [Water] [Fish] 
+2: [Elliott Coleshill] [Tropical Tank] 
+[Tank] [Gravel] [Water] [Heater] [Fish] [Toys] 
+3: [Elliott Coleshill] [Marine Tank] 
+[Tank] [Gravel] [Water] [Lighting] [Heater] [Rocks] [Fish] [Coral] 
+running -->dot -Tpng FishTankCustomerOrders.dat.gv > FishTankCustomerOrders.dat.gv.png
+Warning: FishTankCustomerOrders.dat.gv:2: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:3: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:4: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:5: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:6: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:7: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:8: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:9: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:10: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:11: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:12: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:13: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:14: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:15: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:16: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:17: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:18: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:19: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:20: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:21: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:22: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:23: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:24: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:25: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:26: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:27: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:28: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:29: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:30: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:31: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:32: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:33: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:34: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:35: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:36: string ran past end of line
+Warning: FishTankCustomerOrders.dat.gv:37: string ran past end of line
+command returned 0 (zero is good)
+mimahmud@matrix:~/oop345/ms3> exit
+exit
+
+Script done on Tue 11 Apr 2017 02:58:15 PM EDT
